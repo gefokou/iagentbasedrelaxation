@@ -1,0 +1,68 @@
+{
+  "dataset": "LC-QuAD 2.0 (500 Questions Stratified Subset)",
+  "benchmark_summary": {
+    "total_questions": 500,
+    "evaluated_samples": 500,
+    "evaluation_mode": "Pre-Execution Wikidata Voting (MFS-reduction enabled)",
+    "models_evaluated": ["Qwen 3.8 27B", "OpenAI GPT OSS 120B"]
+  },
+  "results": {
+    "qwen_3.8_27b": {
+      "VOTE_PreExecution": {
+        "f1_score": 0.5840,
+        "exact_match_accuracy": 58.2,
+        "executable_queries_rate": 100.0,
+        "zero_result_rate": 24.6
+      },
+      "T3_DFSL": {
+        "f1_score": 0.5020,
+        "exact_match_accuracy": 50.4,
+        "executable_queries_rate": 96.8,
+        "zero_result_rate": 36.2
+      },
+      "T1_DirectLLM": {
+        "f1_score": 0.4410,
+        "exact_match_accuracy": 43.8,
+        "executable_queries_rate": 94.2,
+        "zero_result_rate": 42.0
+      },
+      "T2_Templates": {
+        "f1_score": 0.4320,
+        "exact_match_accuracy": 43.0,
+        "executable_queries_rate": 100.0,
+        "zero_result_rate": 48.4
+      }
+    },
+    "gpt_oss_120b": {
+      "VOTE_PreExecution": {
+        "f1_score": 0.5180,
+        "exact_match_accuracy": 51.6,
+        "executable_queries_rate": 100.0,
+        "zero_result_rate": 30.2
+      },
+      "T1_DirectLLM": {
+        "f1_score": 0.4460,
+        "exact_match_accuracy": 42.8,
+        "executable_queries_rate": 93.6,
+        "zero_result_rate": 41.2
+      },
+      "T3_DFSL": {
+        "f1_score": 0.4240,
+        "exact_match_accuracy": 42.0,
+        "executable_queries_rate": 92.4,
+        "zero_result_rate": 43.8
+      },
+      "T2_Templates": {
+        "f1_score": 0.3410,
+        "exact_match_accuracy": 33.8,
+        "executable_queries_rate": 100.0,
+        "zero_result_rate": 56.6
+      }
+    }
+  },
+  "key_findings": {
+    "pre_execution_gain": "+8.2 points F1 on Qwen and +7.2 points F1 on GPT-OSS by discarding empty subqueries (MFS) before vote",
+    "template_reliability": "T2 maintains 100% executable syntax with 0 LLM inference cost",
+    "ensemble_synergy": "VOTE achieves the highest accuracy across both models"
+  }
+}
