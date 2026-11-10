@@ -1,0 +1,238 @@
+\documentclass[10pt,aspectratio=169]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{beaver}
+
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+\title[KBQA Multi-Agents sur Wikidata]{Architecture Multi-Agents pour le KBQA sur Wikidata}
+\subtitle{Exécution Pré-Vote, Intégration Falcon 2.0, LangGraph et Évaluation (500 Questions LC-QuAD 2.0)}
+\author{Projet de Recherche / Master}
+\institute{Université de Dschang}
+\date{\today}
+
+\begin{document}
+
+% Slide 1 : Titre
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% Slide 2 : Plan
+\begin{frame}{Plan de la Présentation}
+  \tableofcontents
+\end{frame}
+
+\section{Introduction \& Contexte}
+
+\begin{frame}{Contexte et Objectifs}
+  \begin{itemize}
+    \item \textbf{Problématique :} Répondre à des questions en langage naturel en générant des requêtes formelles SPARQL sur Wikidata (KBQA).
+    \item \textbf{Défis :} Hallucinations d'identifiants (QID/PID), complexité syntaxique, et requêtes vides (problème des sous-requêtes en échec - MFS).
+    \item \textbf{Objectifs et Apports majeurs de l'étude :}
+      \begin{enumerate}
+        \item Remplacer T4 (GRASP) par des techniques complémentaires :
+          \begin{itemize}
+            \item \textbf{T1 :} Génération directe par invite LLM guidée par la liaison.
+            \item \textbf{T2 :} Instanciation de patrons SPARQL prédéfinis (Template-based).
+            \item \textbf{T3 :} In-Context Learning via DFSL (D'Abramo et al., 2025).
+          \end{itemize}
+        \item \textbf{Vote avec Pré-Exécution :} Exécution préalable des candidats sur Wikidata pour éliminer les requêtes vides avant l'arbitrage.
+        \item Intégrer l'outil externe d'Entity \& Relation Linking \textbf{Falcon 2.0}.
+        \item Orchestrer le flux complet sous forme de graphe d'états avec \textbf{LangGraph}.
+        \item Évaluation représentative sur un échantillon étendu de \textbf{500 questions} (LC-QuAD 2.0).
+      \end{enumerate}
+  \end{itemize}
+\end{frame}
+
+\section{Architecture Globale \& LangGraph}
+
+\begin{frame}{Architecture Logicielle Multi-Agents Orchestrée par LangGraph}
+  \centering
+  \resizebox{0.96\textwidth}{!}{
+  \begin{tikzpicture}[
+    agent/.style={rectangle, rounded corners, draw=blue!75, fill=blue!10, very thick, text width=2.4cm, align=center, minimum height=0.9cm, font=\footnotesize},
+    tech/.style={rectangle, rounded corners, draw=teal!75, fill=teal!12, thick, text width=2.2cm, align=center, minimum height=0.8cm, font=\scriptsize},
+    decision/.style={diamond, draw=red!75, fill=red!10, thick, text width=2.2cm, align=center, inner sep=1pt, font=\scriptsize},
+    arrow/.style={-{Stealth[scale=0.9]}, thick}
+  ]
+    \node (q) [font=\bfseries\footnotesize] {Question};
+
+    \node (linker) [agent, right=0.6cm of q] {\textbf{Liaison}\\Falcon 2.0 / WD};
+
+    \node (t2) [tech, right=0.8cm of linker] {\textbf{T2: Patrons}\\1-hop, ASK, Count};
+    \node (t1) [tech, above=0.35cm of t2] {\textbf{T1: Direct LLM}\\Groq Prompting};
+    \node (t3) [tech, below=0.35cm of t2] {\textbf{T3: DFSL}\\k-NN Embeddings};
+
+    \node (vote) [decision, right=0.8cm of t2] {\textbf{Pré-Exécution}\\\& Vote Canonique};
+
+    \node (a2) [agent, right=0.8cm of vote] {\textbf{Agent 2: Exécuteur}\\query.wikidata};
+
+    \node (a3) [agent, right=0.6cm of a2] {\textbf{Agent 3: GraphRAG}\\Synthèse Citée};
+
+    % Connexions
+    \draw [arrow] (q) -- (linker);
+    \draw [arrow] (linker) |- (t1);
+    \draw [arrow] (linker) -- (t2);
+    \draw [arrow] (linker) |- (t3);
+
+    \draw [arrow] (t1) -| (vote);
+    \draw [arrow] (t2) -- (vote);
+    \draw [arrow] (t3) -| (vote);
+
+    \draw [arrow] (vote) -- node[above, font=\tiny] {Retenue} (a2);
+    \draw [arrow] (a2) -- (a3);
+  \end{tikzpicture}
+  }
+
+  \vspace{0.4cm}
+  \begin{block}{\footnotesize Flux d'Exécution LangGraph avec Pré-Exécution}
+    \footnotesize
+    \textbf{Question} $\to$ \textbf{Falcon 2.0} $\to$ \textbf{Génération (T1, T2, T3)} $\to$ \textbf{Pré-Exécution WDQS \& Vote Canonique} $\to$ \textbf{Agent 2} $\to$ \textbf{Agent 3 (GraphRAG)}.
+  \end{block}
+\end{frame}
+
+\section{Rôle des Agents 1, 2 et 3}
+
+\begin{frame}{Rôle de l'Agent 1 : Génération et Vote avec Pré-Exécution}
+  \begin{columns}
+    \begin{column}{0.33\textwidth}
+      \begin{block}{\textbf{T1 : Direct LLM}}
+        \begin{itemize}
+          \item Modèle Groq en zero-shot guidé.
+          \item Prompt structuré avec candidats QID et PID issus du linking.
+          \item Très flexible pour filtres et modificateurs.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.33\textwidth}
+      \begin{block}{\textbf{T2 : Patrons (Templates)}}
+        \begin{itemize}
+          \item Approche déterministe par règles.
+          \item Modèles 1-hop, ASK, COUNT, 2-hop.
+          \item Aucun coût d'inférence LLM, \textbf{100\% syntaxiquement valide}.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.33\textwidth}
+      \begin{block}{\textbf{T3 : DFSL Officiel}}
+        \begin{itemize}
+          \item In-Context Learning (D'Abramo 2025).
+          \item Encodage multilingue Sentence-Transformers.
+          \item Récupération des $k=5$ plus proches exemples d'entraînement.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3cm}
+  \begin{alertblock}{Nouveau Mécanisme : Vote après Pré-Exécution (Élimination des requêtes vides)}
+    Avant d'arbitrer, chaque requête candidate est pré-exécutée sur Wikidata. Les requêtes renvoyant un statut \textbf{non vide} sont sélectionnées en priorité. S'il y a consensus de forme : \textbf{accord immédiat}. Sinon : priorité \textbf{$T3 > T1 > T2$}.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Rôle des Agents 2 et 3 : Exécution \& GraphRAG}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \begin{block}{\textbf{Agent 2 : Exécution \& Évaluation}}
+        \begin{itemize}
+          \item \textbf{Point d'accès unique :} Interroge l'endpoint officiel Wikidata SPARQL (\texttt{query.wikidata.org}).
+          \item \textbf{Gestion robuste des statuts :}
+            \begin{itemize}
+              \item \texttt{ok} : Résultats / bindings obtenus.
+              \item \texttt{vide} : Requête valide mais 0 résultat.
+              \item \texttt{syntaxe}, \texttt{timeout}, \texttt{service} (panne).
+            \end{itemize}
+          \item \textbf{Calculs des métriques :} F1-score au niveau des ensembles de réponses et exactitude stricte (Exact Match).
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{block}{\textbf{Agent 3 : GraphRAG \& Réponse Citée}}
+        \begin{itemize}
+          \item \textbf{Extraction de contexte local (1 saut) :} Récupère les propriétés descriptives des entités de la réponse et de la question.
+          \item \textbf{Notes déterministes :} Phrases anglaises générées par patrons sans hallucination.
+          \item \textbf{Génération avec citations :} Le LLM répond strictement à partir des notes avec balises \texttt{[N1]}, \texttt{[N2]}.
+          \item \textbf{Contrôle de fidélité automatique :} Vérifie qu'aucun nombre ni entité inconnue n'a été inventé par le modèle.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{Résultats et Analyse Comparative}
+
+\begin{frame}{Tableau Comparatif des Performances (Échantillon de 500 Questions)}
+  \small
+  \begin{table}[ht]
+    \centering
+    \begin{tabular}{llccc}
+      \toprule
+      \textbf{Modèle Groq} & \textbf{Technique} & \textbf{F1-Score} & \textbf{Exact Match (Accuracy)} \\
+      \midrule
+      \textbf{Qwen 3.8 27B} & \textbf{VOTE (Pré-Exécution)} & \textbf{0.5840} & \textbf{58.2\%} \\
+       & T3 (DFSL) & 0.5020 & 50.4\% \\
+       & T1 (Direct LLM) & 0.4410 & 43.8\% \\
+       & T2 (Patrons Prédéfinis) & 0.4320 & 43.0\% \\
+      \midrule
+      \textbf{GPT OSS 120B} & \textbf{VOTE (Pré-Exécution)} & \textbf{0.5180} & \textbf{51.6\%} \\
+       & T1 (Direct LLM) & 0.4460 & 42.8\% \\
+       & T3 (DFSL) & 0.4240 & 42.0\% \\
+       & T2 (Patrons Prédéfinis) & 0.3410 & 33.8\% \\
+      \bottomrule
+    \end{tabular}
+    \caption{Évaluation comparative sur 500 questions stratifiées de LC-QuAD 2.0.}
+  \end{table}
+\end{frame}
+
+\begin{frame}{Visualisation Graphique : Impact de la Pré-Exécution (500 Questions)}
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      ybar,
+      bar width=14pt,
+      width=0.78\textwidth,
+      height=5.2cm,
+      ylabel={F1 Score},
+      ymin=0, ymax=0.7,
+      symbolic x coords={VOTE (Pré-Exec), T1 (Direct), T2 (Patrons), T3 (DFSL)},
+      xtick=data,
+      nodes near coords,
+      nodes near coords align={vertical},
+      legend style={at={(0.5,1.15)}, anchor=north, legend columns=-1},
+      grid=major,
+      grid style={dashed, gray!30}
+    ]
+      \addplot[fill=blue!60] coordinates {(VOTE (Pré-Exec), 0.518) (T1 (Direct), 0.446) (T2 (Patrons), 0.341) (T3 (DFSL), 0.424)};
+      \addplot[fill=red!60] coordinates {(VOTE (Pré-Exec), 0.584) (T1 (Direct), 0.441) (T2 (Patrons), 0.432) (T3 (DFSL), 0.502)};
+      \legend{OpenAI GPT OSS 120B, Qwen 3.8 27B}
+    \end{axis}
+  \end{tikzpicture}
+\end{frame}
+
+\section{Conclusion \& Enseignements}
+
+\begin{frame}{Conclusion \& Enseignements}
+  \begin{itemize}
+    \item \textbf{Confirmation sur 500 questions :} Le vote avec pré-exécution confirme son gain substantiel (+8.2 points F1 sur Qwen, atteignant \textbf{0.5840} et \textbf{58.2\%} d'Exact Match).
+    \item \textbf{Synergie des techniques :} T2 assure la résilience minimale à coût zéro, tandis que T1 et T3 résolvent les intentions complexes.
+    \item \textbf{Pipeline complet (Agents 2 \& 3) :} Assure une exécution contrôlée sur Wikidata et une restitution naturelle sourcée (GraphRAG) avec citations vérifiées.
+    \item \textbf{Base de référence disponible :} Le fichier massif de \textbf{7 000 questions} (`data/test7000.jsonl`) est prêt pour les futurs travaux d'extension.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+  \centering
+  \Huge \textbf{Merci pour votre attention !} \\
+  \vspace{0.8cm}
+  \large Questions \& Discussions
+\end{frame}
+
+\end{document}
